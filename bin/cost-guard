@@ -1251,6 +1251,51 @@ def cmd_indicator() -> int:
     return 0
 
 
+def _settings_write_or_instruct(
+    settings: Dict[str, Any], desired_status_line: Optional[Dict[str, Any]],
+) -> bool:
+    """Try to atomically write the user's settings.json. If Claude Code's
+    plugin sandbox denies the rename (PermissionError / EPERM is the typical
+    signal), don't silently fail — print the exact JSON snippet the user
+    needs to add or remove by hand and return False. Returns True on success.
+
+    The plugin's own state (indicator.json, backup) is always written before
+    this is called, so a manual settings.json edit by the user is enough to
+    finish the install/uninstall — no further plugin action needed.
+    """
+    path = _USER_SETTINGS
+    try:
+        _write_json_atomic(path, settings)
+        return True
+    except PermissionError:
+        sys.stderr.write(
+            "\n"
+            "cost-guard: cannot write to ~/.claude/settings.json from the\n"
+            "plugin sandbox (Claude Code denies plugin processes write access\n"
+            "to that file by design). The plugin's own state was updated\n"
+            "successfully; only the settings.json side needs a manual edit.\n"
+            "\n"
+        )
+        if desired_status_line is None:
+            sys.stderr.write(
+                "Open ~/.claude/settings.json in your editor and REMOVE the\n"
+                "`statusLine` block entirely (or replace it with whatever you\n"
+                "want there).\n"
+            )
+        else:
+            sys.stderr.write(
+                "Open ~/.claude/settings.json in your editor and set the\n"
+                "`statusLine` field to:\n"
+                "\n"
+            )
+            sys.stderr.write(json.dumps(desired_status_line, indent=2) + "\n")
+        sys.stderr.write(
+            "\nThen restart Claude Code (or reload settings) for the change\n"
+            "to take effect.\n"
+        )
+        return False
+
+
 def cmd_install_indicator(args: argparse.Namespace) -> int:
     path = _USER_SETTINGS
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1270,7 +1315,8 @@ def cmd_install_indicator(args: argparse.Namespace) -> int:
             return 0
         settings["statusLine"] = dict(existing)
         settings["statusLine"]["command"] = desired
-        _write_json_atomic(path, settings)
+        if not _settings_write_or_instruct(settings, settings["statusLine"]):
+            return 0
         print(f"cost-guard: indicator path updated in {path}")
         return 0
 
@@ -1310,7 +1356,8 @@ def cmd_install_indicator(args: argparse.Namespace) -> int:
             "command": desired,
             "refreshInterval": existing.get("refreshInterval", 2),
         }
-        _write_json_atomic(path, settings)
+        if not _settings_write_or_instruct(settings, settings["statusLine"]):
+            return 0
 
         if mode == "compose":
             print(f"cost-guard: indicator installed in compose mode.")
@@ -1331,7 +1378,8 @@ def cmd_install_indicator(args: argparse.Namespace) -> int:
         "command": desired,
         "refreshInterval": 2,
     }
-    _write_json_atomic(path, settings)
+    if not _settings_write_or_instruct(settings, settings["statusLine"]):
+        return 0
     print(f"cost-guard: indicator installed (no prior bottom-row command was present).")
     print(f"  Settings file: {path}")
     print(f"  Revert with /cost-guard:uninstall-indicator.")
@@ -1354,7 +1402,11 @@ def cmd_uninstall_indicator(args: argparse.Namespace) -> int:
     previous = state.get("previous_entry")
     if isinstance(previous, dict) and previous:
         settings["statusLine"] = previous
-        _write_json_atomic(path, settings)
+        if not _settings_write_or_instruct(settings, previous):
+            # State files cleared even on manual-edit fallback so that next
+            # install starts fresh; the user just needs to paste the snippet.
+            _indicator_state_write({})
+            return 0
         _indicator_state_write({})
         print(f"cost-guard: indicator uninstalled; restored your previous bottom-row command:")
         print(f"  {previous.get('command')}")
@@ -1362,7 +1414,9 @@ def cmd_uninstall_indicator(args: argparse.Namespace) -> int:
 
     # Solo install, or nothing to restore.
     settings.pop("statusLine", None)
-    _write_json_atomic(path, settings)
+    if not _settings_write_or_instruct(settings, None):
+        _indicator_state_write({})
+        return 0
     _indicator_state_write({})
     print(f"cost-guard: indicator uninstalled. There was no prior command to restore.")
     return 0
