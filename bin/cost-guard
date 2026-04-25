@@ -736,7 +736,6 @@ def evaluate_and_maybe_halt(
     warn_usd = float(cfg.get("warn_at_usd", 7.0))
 
     sess_cost = session_cost_usd(session_id)
-    sess_rate = session_rate_per_min_usd(session_id)
 
     # --- Halt 1: per-session $ cap ---
     if sess_cost >= session_cap:
@@ -753,20 +752,32 @@ def evaluate_and_maybe_halt(
         mark_halt(session_id, "session-over-cap")
         return 2
 
-    # --- Halt 2: burn rate ---
-    if sess_rate >= rate_limit:
-        sys.stderr.write(halt_banner(
-            trigger=f"session burn rate ${sess_rate:.2f}/min >= limit ${rate_limit:.2f}/min",
-            detail="Trailing 5-minute burn rate exceeds the configured limit.",
-            cfg=cfg,
-            session_id=session_id,
-        ))
-        log_decision(
-            "halt", "rate-over-limit", event, session_id,
-            {"rate": sess_rate, "limit": rate_limit},
-        )
-        mark_halt(session_id, "rate-over-limit")
-        return 2
+    # --- Halt 2: burn rate (debounced to once per 60s) ---
+    # The trailing 5-minute burn rate is already smoothed by its window, but
+    # PostToolBatch / PreToolUse hooks can fire several times per minute on a
+    # busy turn — re-evaluating the rate on every fire makes the halt feel
+    # twitchy and produces redundant halt-log entries. Debounce so the rate
+    # halt fires at most once per 60 seconds; the indicator's displayed rate
+    # value is unaffected and continues to update at every status-line refresh.
+    state = session_load(session_id)
+    last_rate_check = float(state.get("last_rate_check_ts") or 0.0)
+    now = time.time()
+    if (now - last_rate_check) >= 60.0:
+        sess_rate = session_rate_per_min_usd(session_id)
+        session_update(session_id, last_rate_check_ts=now)
+        if sess_rate >= rate_limit:
+            sys.stderr.write(halt_banner(
+                trigger=f"session burn rate ${sess_rate:.2f}/min >= limit ${rate_limit:.2f}/min",
+                detail="Trailing 5-minute burn rate exceeds the configured limit.",
+                cfg=cfg,
+                session_id=session_id,
+            ))
+            log_decision(
+                "halt", "rate-over-limit", event, session_id,
+                {"rate": sess_rate, "limit": rate_limit},
+            )
+            mark_halt(session_id, "rate-over-limit")
+            return 2
 
     # --- Halt 3: per-step $ cap (only at PostToolBatch) ---
     if check_turn_cost:
@@ -1293,18 +1304,32 @@ def _settings_write_or_instruct(
 ) -> bool:
     """Try to atomically write the user's settings.json. If Claude Code's
     plugin sandbox denies the rename (PermissionError / EPERM is the typical
-    signal), don't silently fail — print the exact JSON snippet the user
-    needs to add or remove by hand and return False. Returns True on success.
+    signal), don't silently fail — emit a machine-readable directive on stdout
+    so the install-indicator skill can drive an Edit-tool-based application,
+    plus human instructions on stderr as a fallback. Returns True on success.
+
+    The stdout directive uses a single line of the form:
+        cost-guard:apply-statusline:<JSON>
+    where <JSON> is either the desired statusLine block (install / heal) or
+    the literal `null` (uninstall). The model-invokable install-indicator
+    skill parses this line and applies it via the Edit tool, completing the
+    install end-to-end without manual user intervention.
 
     The plugin's own state (indicator.json, backup) is always written before
-    this is called, so a manual settings.json edit by the user is enough to
-    finish the install/uninstall — no further plugin action needed.
+    this is called, so even if the skill / Edit path fails, a manual edit by
+    the user is enough to finish the install — no further plugin action.
     """
     path = _USER_SETTINGS
     try:
         _write_json_atomic(path, settings)
         return True
     except PermissionError:
+        # Machine-readable directive for the install-indicator skill.
+        sys.stdout.write(
+            "cost-guard:apply-statusline:"
+            + json.dumps(desired_status_line)
+            + "\n"
+        )
         sys.stderr.write(
             "\n"
             "cost-guard: cannot write to ~/.claude/settings.json from the\n"

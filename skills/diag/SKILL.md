@@ -1,6 +1,7 @@
 ---
 description: Dump cost-guard's plugin state — file sizes, env vars, recent halts, effective config, and the current bottom-row command. For debugging only.
 disable-model-invocation: true
+allowed-tools: Bash(*"cost-guard" diag*)
 ---
 
 # cost-guard: diagnostics

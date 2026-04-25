@@ -1,6 +1,7 @@
 ---
 description: Update the cost-guard per-minute cost limit in USD/min. Usage — /cost-guard:set-rate <USD/min>.
 disable-model-invocation: true
+allowed-tools: Bash(*"cost-guard" set-rate*)
 ---
 
 # cost-guard: set per-minute cost limit

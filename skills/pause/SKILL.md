@@ -1,6 +1,7 @@
 ---
 description: Pause cost-guard halting. Default is global. Pass a session id to pause only that session.
 disable-model-invocation: true
+allowed-tools: Bash(*"cost-guard" pause*)
 ---
 
 # cost-guard: pause halts

@@ -1,6 +1,7 @@
 ---
 description: Update the cost-guard per-session amber-warn threshold in USD. Usage — /cost-guard:set-warn <USD> (e.g. 5 for $5). Must be below the session cap.
 disable-model-invocation: true
+allowed-tools: Bash(*"cost-guard" set-warn*)
 ---
 
 # cost-guard: set per-session warn threshold

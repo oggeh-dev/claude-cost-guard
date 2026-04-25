@@ -1,6 +1,7 @@
 ---
 description: Remove cost-guard's bottom-row indicator. If a previous command was backed up at install time, it is restored byte-for-byte.
 disable-model-invocation: true
+allowed-tools: Bash(*"cost-guard" uninstall-indicator*)
 ---
 
 # cost-guard: uninstall bottom-row indicator

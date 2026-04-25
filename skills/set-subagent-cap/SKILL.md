@@ -1,6 +1,7 @@
 ---
 description: Update the cost-guard subagent-spawn cap per step. Usage — /cost-guard:set-subagent-cap <N> where N is 1 to 100.
 disable-model-invocation: true
+allowed-tools: Bash(*"cost-guard" set-subagent-cap*)
 ---
 
 # cost-guard: set per-step subagent cap

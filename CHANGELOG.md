@@ -2,6 +2,14 @@
 
 All notable changes to `cost-guard` are documented here. This project uses [semantic versioning](https://semver.org).
 
+## [0.1.2] — 2026-04-26
+
+### Fixed
+
+- **Slash commands no longer hard-fail with `Shell command permission check failed`.** Every `/cost-guard:*` skill now declares a narrowly-scoped `allowed-tools` Bash pattern in its `SKILL.md` frontmatter, matching the pattern Anthropic's own plugin-dev examples use for slash commands that contain `!`…`` shell expansion. Without this, Claude Code's permission engine refused every invocation outright (no dialog, just an error). The patterns are scoped per-skill to the specific cost-guard subcommand they invoke.
+- **`/cost-guard:install-indicator` actually installs end-to-end.** Previously it printed manual-edit instructions on stderr and required the user to paste the JSON snippet into `~/.claude/settings.json` by hand, because the plugin sandbox blocks plugin processes from writing to that file directly. The skill is now model-invokable and declares `Edit(~/.claude/settings.json)` in `allowed-tools`; the binary emits a machine-readable `cost-guard:apply-statusline:<JSON>` directive on stdout when the direct write is sandbox-denied; the skill instructs Claude to parse that line and apply the change via the Edit tool. Manual-paste fallback on stderr is still emitted so any direct-shell user gets the same instructions as before.
+- **Burn-rate halt no longer re-evaluates on every hook fire.** The rate halt branch in `evaluate_and_maybe_halt` was running on every `PreToolUse` / `PostToolBatch` / `PreCompact` event — several times per minute on a busy turn — producing redundant halts and noisy `halt-log.jsonl` entries. The branch now skips evaluation if less than 60 seconds have passed since the last rate check (tracked in session state as `last_rate_check_ts`). The 5-minute trailing-rate window already smoothed the *value*; this change limits how often the *halt decision* is re-applied. The indicator's displayed rate is unaffected and continues to update at every status-line refresh.
+
 ## [0.1.1] — 2026-04-25
 
 ### Fixed

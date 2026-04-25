@@ -1,6 +1,7 @@
 ---
 description: Show current cost-guard budget, 5-hour slot percentage, burn rate, and limits.
 disable-model-invocation: true
+allowed-tools: Bash(*"cost-guard" status*)
 ---
 
 # cost-guard status
