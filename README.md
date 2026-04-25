@@ -169,9 +169,9 @@ All persistent state lives in `${CLAUDE_PLUGIN_DATA}` which Claude Code resolves
 
 ## Reinstalling, uninstalling, resetting
 
-- **Reinstall / update:** re-run `/plugin install cost-guard@<owner>` or swap the `--plugin-dir`. `${CLAUDE_PLUGIN_DATA}` survives.
+- **Reinstall / update:** re-run `/plugin install cost-guard@oggeh` or swap the `--plugin-dir`. `${CLAUDE_PLUGIN_DATA}` survives.
 - **Re-seed from history:** delete `${CLAUDE_PLUGIN_DATA}/.seeded`. The next `SessionStart` will rebuild the ledger from `~/.claude/projects`.
-- **Uninstall:** `/plugin uninstall cost-guard@<owner>`. Pass `--keep-data` to preserve the ledger in case you re-install later.
+- **Uninstall:** `/plugin uninstall cost-guard@oggeh`. Pass `--keep-data` to preserve the ledger in case you re-install later.
 - **Reset everything:** delete `${CLAUDE_PLUGIN_DATA}`.
 
 ---
