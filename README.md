@@ -2,6 +2,8 @@
 
 **Real-time USD cost enforcement for Claude Code.** Halts runaway agentic loops mid-step before they burn through your budget.
 
+![cost-guard live indicator at the bottom of the Claude Code UI](./docs/indicator.png)
+
 `cost-guard` is a Claude Code plugin. Once installed, it runs automatically on every session and every prompt:
 
 - **Mid-step halt** (via the `PostToolBatch` hook) stops the agentic loop between model iterations if the current step's cost, the session's total cost, or the burn rate crosses its configured limit. This keeps one greedy step from cascading into a $30+ spend in minutes.

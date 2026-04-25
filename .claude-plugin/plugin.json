@@ -1,7 +1,7 @@
 {
   "name": "cost-guard",
   "version": "0.1.0",
-  "description": "Real-time token-cost budget enforcement for Claude Code. Halts runaway turns mid-loop before they burn through your 5-hour slot.",
+  "description": "Real-time USD cost enforcement for Claude Code. Halts runaway agentic loops mid-step before they burn through your budget.",
   "author": {
     "name": "OGGEH, Inc"
   },
