@@ -1,6 +1,6 @@
 # Release process
 
-How to ship a new release of `cost-guard`. This is a standalone Claude Code plugin repository; the catalog that lists it (the `oggeh` marketplace) lives in a separate repo (`oggeh-dev/claude-plugins`).
+How to ship a new release of `cost-guard`. This is a standalone Claude Code plugin repository — the release flow below is fully self-contained.
 
 ## Versioning policy
 
@@ -20,7 +20,7 @@ Standard [semantic versioning](https://semver.org/) — `MAJOR.MINOR.PATCH`.
 
 ### 1. `.claude-plugin/plugin.json`
 
-Bump `"version"`. This is the field Claude Code uses to detect "has the user got the latest?". **Skipping this bump is the most common release mistake.** Users running `/plugin update cost-guard@oggeh` will see "already at the latest version" and miss your release.
+Bump `"version"`. This is the field Claude Code uses to detect "has the user got the latest?". **Skipping this bump is the most common release mistake** — users running `/plugin update cost-guard@oggeh` will see "already at the latest version" and miss your release.
 
 ### 2. `CHANGELOG.md`
 
@@ -41,18 +41,14 @@ Add a new section at the top, above the previous release entry:
 
 Use [Keep a Changelog](https://keepachangelog.com/) headings (`Added` / `Changed` / `Fixed` / `Deprecated` / `Removed` / `Security`).
 
-### 3. (In the marketplace repo, separately) `oggeh-dev/claude-plugins/.claude-plugin/marketplace.json`
-
-The marketplace's plugin entry has its own `version` field. **Bump it to match plugin.json's new version.** This is what users see in the catalog.
-
-For the procedure on the marketplace side, see `oggeh-dev/claude-plugins/RELEASE.md`.
+That's it — these are the only two files this repo's release flow touches.
 
 ---
 
 ## Step-by-step release
 
 ```bash
-# 1. (Optional) Branch for the release commit. Working directly on main is also fine for solo maintenance.
+# 1. (Optional) Branch for the release commit. Working directly on main is fine for solo maintenance.
 git checkout -b release/v0.2.0
 
 # 2. Edit .claude-plugin/plugin.json + CHANGELOG.md.
@@ -69,7 +65,7 @@ git checkout main
 git merge --ff-only release/v0.2.0
 git branch -d release/v0.2.0
 
-# 6. Dry-run the tag.
+# 6. Dry-run the tag. This validates plugin.json and prints the tag name without creating it.
 claude plugin tag . --dry-run
 
 # 7. Create + push the tag in one step.
@@ -77,9 +73,6 @@ claude plugin tag . --push -m "cost-guard v0.2.0"
 
 # 8. Push the release commit.
 git push origin main
-
-# 9. In the marketplace repo, bump marketplace.json's plugin entry version
-#    to match. See oggeh-dev/claude-plugins/RELEASE.md.
 ```
 
 The tag format is `cost-guard--v0.2.0` — the `claude plugin tag` command derives it from `plugin.json`'s `name` and `version` fields.
@@ -94,7 +87,7 @@ After your push:
 /plugin update cost-guard@oggeh
 ```
 
-If the user has auto-update enabled for the `oggeh` marketplace, Claude Code refreshes on next start and prompts them to run `/reload-plugins`.
+If the user has enabled auto-update for the `oggeh` marketplace (third-party marketplaces have it OFF by default; the user must opt in via `/plugin` → Marketplaces tab), Claude Code refreshes on next start and prompts them to run `/reload-plugins`.
 
 ---
 
@@ -114,7 +107,7 @@ CHANGELOG entry under `### Changed`:
 1. Branch from the broken release tag: `git checkout -b hotfix/v0.2.1 cost-guard--v0.2.0`.
 2. Fix the bug. CHANGELOG under `### Fixed`.
 3. Bump patch in `plugin.json`.
-4. Standard release procedure.
+4. Run the standard release procedure.
 
 ---
 
@@ -134,9 +127,8 @@ After pushing:
 
 - [ ] The commit appears at `oggeh-dev/claude-cost-guard`.
 - [ ] The tag `cost-guard--v<NEW>` appears in the GitHub releases / tags view.
-- [ ] In a fresh Claude Code session: `/plugin update cost-guard@oggeh` (or auto-update) pulls the new version.
+- [ ] In a fresh Claude Code session: `/plugin update cost-guard@oggeh` pulls the new version.
 - [ ] `/cost-guard:status` shows `enabled: true` and the new behavior is in effect.
-- [ ] **Marketplace side:** the corresponding bump in `oggeh-dev/claude-plugins/.claude-plugin/marketplace.json` is committed and tagged.
 
 ---
 
