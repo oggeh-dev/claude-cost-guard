@@ -186,6 +186,10 @@ All persistent state lives in `${CLAUDE_PLUGIN_DATA}` which Claude Code resolves
 
 ---
 
+## Privacy
+
+`cost-guard` makes **zero network requests** and contains no analytics or telemetry. All data it reads and writes lives on your machine only. See [PRIVACY.md](./PRIVACY.md) for the full statement of what the plugin reads, what it writes, and what control you have over it.
+
 ## License
 
 MIT — see [LICENSE](./LICENSE).
