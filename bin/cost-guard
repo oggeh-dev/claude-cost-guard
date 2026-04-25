@@ -1284,11 +1284,18 @@ def _settings_write_or_instruct(
             )
         else:
             sys.stderr.write(
-                "Open ~/.claude/settings.json in your editor and set the\n"
-                "`statusLine` field to:\n"
+                "Open ~/.claude/settings.json in your editor and add the\n"
+                "following `statusLine` block at the top level (or replace\n"
+                "the existing `statusLine` block if you already have one —\n"
+                "Claude Code allows only one bottom-row command at a time,\n"
+                "and cost-guard's indicator IS that command):\n"
                 "\n"
+                '  "statusLine": '
             )
-            sys.stderr.write(json.dumps(desired_status_line, indent=2) + "\n")
+            # Indent the value by two spaces to align with the key prefix.
+            value = json.dumps(desired_status_line, indent=2)
+            indented = value.replace("\n", "\n  ")
+            sys.stderr.write(indented + "\n")
         sys.stderr.write(
             "\nThen restart Claude Code (or reload settings) for the change\n"
             "to take effect.\n"
