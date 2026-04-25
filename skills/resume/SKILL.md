@@ -1,7 +1,7 @@
 ---
 description: Resume cost-guard halting after a pause. Restores the master enabled switch to true.
 disable-model-invocation: true
-allowed-tools: Bash(*"cost-guard" resume*)
+allowed-tools: Bash(*/cost-guard" resume*)
 ---
 
 # cost-guard: resume halts

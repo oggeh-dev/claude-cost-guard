@@ -1,6 +1,6 @@
 ---
 description: Install cost-guard's bottom-row indicator. If a bottom-row command already exists, cost-guard asks whether to compose (wrap and augment) or replace it. Usage — /cost-guard:install-indicator [compose|replace].
-allowed-tools: Bash(*"cost-guard" install-indicator*) Edit(~/.claude/settings.json) Read(~/.claude/settings.json)
+allowed-tools: Bash(*/cost-guard" install-indicator*) Edit(~/.claude/settings.json) Read(~/.claude/settings.json)
 ---
 
 # cost-guard: install bottom-row indicator

@@ -1,7 +1,7 @@
 ---
 description: Update the cost-guard per-step USD cap. A "step" is one full Claude response cycle (one user prompt → Claude's tool calls + final answer). Usage — /cost-guard:set-step-limit <USD>.
 disable-model-invocation: true
-allowed-tools: Bash(*"cost-guard" set-step-limit*)
+allowed-tools: Bash(*/cost-guard" set-step-limit*)
 ---
 
 # cost-guard: set per-step cost cap

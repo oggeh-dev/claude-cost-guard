@@ -2,6 +2,12 @@
 
 All notable changes to `cost-guard` are documented here. This project uses [semantic versioning](https://semver.org).
 
+## [0.1.3] — 2026-04-26
+
+### Fixed
+
+- **`allowed-tools` patterns shipped in 0.1.2 didn't match the actual expanded bash command, so slash commands continued to hard-fail.** The patterns used `*"cost-guard" <subcommand>*`, expecting both an opening and closing `"` adjacent to `cost-guard`. The real expanded command places the opening `"` at the start of the binary path (`"/Users/.../bin/cost-guard"`), so only the closing `"` is adjacent. Fixed by changing every skill's pattern to `*/cost-guard" <subcommand>*` — slash before `cost-guard` (path separator), closing quote after.
+
 ## [0.1.2] — 2026-04-26
 
 ### Fixed

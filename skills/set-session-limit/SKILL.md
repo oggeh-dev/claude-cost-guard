@@ -1,7 +1,7 @@
 ---
 description: Update the cost-guard per-session USD cap. Usage — /cost-guard:set-session-limit <USD> (e.g. 15 for $15).
 disable-model-invocation: true
-allowed-tools: Bash(*"cost-guard" set-session-limit*)
+allowed-tools: Bash(*/cost-guard" set-session-limit*)
 ---
 
 # cost-guard: set per-session cost cap
