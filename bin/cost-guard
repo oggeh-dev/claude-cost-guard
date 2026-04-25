@@ -561,6 +561,20 @@ def cmd_halt_check() -> int:
     except Exception:
         pass
 
+    # Track turn boundaries unconditionally — same pre-gate pattern that
+    # `ingest_transcript` (above) uses to keep session/rate metrics live
+    # under `enabled: false`. Without this, the indicator's step cell
+    # silently sticks at $0.00 in disabled mode because `turn_start_ts`
+    # was only ever written by the gated handlers below, leaving the
+    # `or time.time()` fallback in `_render_cost_guard_row` to filter
+    # the ledger for entries with ts >= now (always empty). The gated
+    # handlers also set turn_start_ts; doing it here too is idempotent.
+    if event in ("SessionStart", "UserPromptSubmit") and session_id and session_id != "unknown":
+        try:
+            session_update(session_id, turn_start_ts=time.time())
+        except Exception:
+            pass
+
     if not cfg.get("enabled", True):
         return 0
 

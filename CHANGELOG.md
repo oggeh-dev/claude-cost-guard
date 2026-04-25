@@ -2,6 +2,12 @@
 
 All notable changes to `cost-guard` are documented here. This project uses [semantic versioning](https://semver.org).
 
+## [0.1.1] — 2026-04-25
+
+### Fixed
+
+- **Indicator's step cell now stays accurate under `enabled: false`.** The step counter (`👣 step: $X (cap $Y)`) was silently sticking at `$0.00` whenever cost-guard was disabled. Root cause: `turn_start_ts` — the field the indicator reads to know where the current step began — was only ever written by the `SessionStart` / `UserPromptSubmit` hook handlers, which short-circuit on `enabled: false`. With no `turn_start_ts` in session state, the `or time.time()` fallback in `_render_cost_guard_row` filtered the ledger for entries with `ts >= now`, which is always empty. Fix: `cmd_halt_check` now writes `turn_start_ts` unconditionally on `SessionStart` / `UserPromptSubmit`, before the `enabled` gate — the same pre-gate pattern `ingest_transcript` already uses to keep session/rate metrics live in disabled mode. The post-gate handlers still write it too; doing so twice is idempotent. Slot/session/rate were unaffected (slot is indicator-self-managed; session/rate read the pre-gate-populated ledger directly).
+
 ## [0.1.0] — 2026-04-25
 
 Initial release. Local development only; not yet published to the official marketplace.
