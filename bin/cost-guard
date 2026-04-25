@@ -52,12 +52,35 @@ def _plugin_data() -> Path:
     env = os.environ.get("CLAUDE_PLUGIN_DATA")
     if env:
         return Path(env)
-    # Fallback: match the path Claude Code uses when loading the plugin via
-    # `--plugin-dir`. Claude Code resolves `${CLAUDE_PLUGIN_DATA}` to
-    # `~/.claude/plugins/data/<plugin-id>/`, where <plugin-id> for a local-dir
-    # load is `<plugin-name>-inline`. Using the same path here keeps hook
-    # writes and CLI reads/writes pointed at the same directory even when an
-    # env var is missing (e.g., when running the binary from a user shell).
+    # CLAUDE_PLUGIN_DATA is exported by Claude Code only to hook, MCP, LSP,
+    # and monitor subprocesses (per plugins-reference) — NOT to the
+    # statusLine subprocess. When the binary runs as the statusLine
+    # command, this env var is missing.
+    #
+    # Recover the data dir by introspecting the binary's own path. For a
+    # marketplace-installed plugin the layout is:
+    #   ~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/bin/<binary>
+    # which corresponds to data dir:
+    #   ~/.claude/plugins/data/<plugin>-<marketplace>
+    # Matching the path Claude Code uses for hook subprocesses keeps reads
+    # consistent across subprocess contexts (statusLine vs hooks vs skills).
+    try:
+        parts = Path(__file__).resolve().parts
+        cache_idx = parts.index("cache")
+        # Confirm we're under ~/.claude/plugins/cache/...
+        if (
+            cache_idx >= 2
+            and parts[cache_idx - 1] == "plugins"
+            and parts[cache_idx - 2] == ".claude"
+        ):
+            marketplace = parts[cache_idx + 1]
+            plugin = parts[cache_idx + 2]
+            return Path.home() / ".claude" / "plugins" / "data" / f"{plugin}-{marketplace}"
+    except (ValueError, IndexError):
+        pass
+    # Local-dev fallback: the binary lives outside the plugin cache (e.g.,
+    # when loaded via `claude --plugin-dir <some-path>`). Use the path
+    # Claude Code itself uses for that mode.
     return Path.home() / ".claude" / "plugins" / "data" / "cost-guard-inline"
 
 
