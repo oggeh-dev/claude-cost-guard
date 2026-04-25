@@ -1,0 +1,72 @@
+{
+  "name": "cost-guard",
+  "version": "0.1.0",
+  "description": "Real-time token-cost budget enforcement for Claude Code. Halts runaway turns mid-loop before they burn through your 5-hour slot.",
+  "author": {
+    "name": "OGGEH, Inc"
+  },
+  "license": "MIT",
+  "keywords": [
+    "cost",
+    "budget",
+    "rate-limit",
+    "observability",
+    "safety"
+  ],
+  "userConfig": {
+    "enabled": {
+      "type": "boolean",
+      "title": "Enable cost-guard halting",
+      "description": "Master switch. When off, no halts fire (ledger still records).",
+      "default": true
+    },
+    "max_usd_per_session": {
+      "type": "number",
+      "title": "Per-session cost cap (USD)",
+      "description": "Halt new work when this session's total spend reaches this value. Primary defense against a session burning too much over time.",
+      "default": 10.0,
+      "min": 0.1
+    },
+    "max_usd_per_step": {
+      "type": "number",
+      "title": "Per-step cost cap (USD)",
+      "description": "Halt the agentic loop after one Claude step (one user prompt → Claude's tool calls + final answer) has spent this many dollars. Primary defense against a single greedy step.",
+      "default": 2.0,
+      "min": 0.05
+    },
+    "rate_per_min_usd": {
+      "type": "number",
+      "title": "Burn-rate limit (USD/min)",
+      "description": "Halt mid-step when the trailing 5-minute session burn rate exceeds this value.",
+      "default": 0.5,
+      "min": 0.01
+    },
+    "max_subagent_spawns_per_step": {
+      "type": "number",
+      "title": "Max subagent spawns per step",
+      "description": "Deny further Agent/Task tool calls within one step once this count is reached. Bounds fan-out cost.",
+      "default": 8,
+      "min": 1,
+      "max": 100
+    },
+    "warn_at_usd": {
+      "type": "number",
+      "title": "Per-session warning threshold (USD)",
+      "description": "Emit an amber warning on UserPromptSubmit when session spend crosses this dollar amount (always below max_usd_per_session).",
+      "default": 7.0,
+      "min": 0.05
+    },
+    "seed_from_history": {
+      "type": "boolean",
+      "title": "Seed ledger from existing transcripts on first run",
+      "description": "On first install, scan recent ~/.claude/projects transcripts to populate the rolling cost ledger. Gives accurate trailing rates on the first prompt.",
+      "default": true
+    },
+    "log_decisions": {
+      "type": "boolean",
+      "title": "Log halt decisions",
+      "description": "Write an audit line to halt-log.jsonl for every halt/warn decision. Useful for diagnosing false positives.",
+      "default": true
+    }
+  }
+}

@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+.venv/
+venv/
+.idea/
+.vscode/
+.pytest_cache/
+tests/fixtures/scratch/

@@ -1,0 +1,44 @@
+{
+  "_metadata": {
+    "source": "https://platform.claude.com/docs pricing page",
+    "unit": "USD per 1,000,000 tokens",
+    "last_verified": "2026-04-25",
+    "fields": {
+      "input": "standard input tokens",
+      "output": "output tokens",
+      "cache_write_5m": "ephemeral 5-minute cache write",
+      "cache_write_1h": "ephemeral 1-hour cache write (ENABLE_PROMPT_CACHING_1H)",
+      "cache_read": "cache read"
+    }
+  },
+  "tiers": {
+    "opus": {
+      "input": 15.0,
+      "output": 75.0,
+      "cache_write_5m": 18.75,
+      "cache_write_1h": 30.0,
+      "cache_read": 1.5
+    },
+    "sonnet": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_write_5m": 3.75,
+      "cache_write_1h": 6.0,
+      "cache_read": 0.3
+    },
+    "haiku": {
+      "input": 0.8,
+      "output": 4.0,
+      "cache_write_5m": 1.0,
+      "cache_write_1h": 1.6,
+      "cache_read": 0.08
+    }
+  },
+  "model_tier_rules": [
+    {"contains": "opus", "tier": "opus"},
+    {"contains": "sonnet", "tier": "sonnet"},
+    {"contains": "haiku", "tier": "haiku"}
+  ],
+  "unknown_model_tier": "opus",
+  "_unknown_note": "Unknown models default to 'opus' rates — conservative (halts earlier rather than later)."
+}
