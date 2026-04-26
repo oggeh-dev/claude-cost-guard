@@ -188,9 +188,21 @@ These are intrinsic to the data and platform behavior cost-guard depends on; the
 
 cost-guard only sees costs recorded in JSONL transcripts under `~/.claude/projects/`. Tokens consumed via claude.ai web/desktop or other Claude apps still count against your 5-hour slot but don't appear in the ledger. Users who split work across those surfaces will see the `slot:` cell **underestimate** the true slot value — the bigger your non-Claude-Code share, the bigger the gap.
 
-### Idle sessions
+### Idle sessions — slot percentage lags
 
-cost-guard updates the ledger from hook fires (`UserPromptSubmit`, `PreToolUse`, `PostToolBatch`, `PreCompact`, `SubagentStart`) and reads it on every status-line refresh. In a fully-idle session — one where you're reading the response with no further activity — Claude Code does not reliably invoke the status-line subprocess on its `refreshInterval` schedule, so the indicator can show stalled `slot:` values until the next hook fires (any user input or tool call wakes it instantly). This is a Claude Code platform behavior, not a cost-guard bug; values self-correct the moment the session resumes activity.
+The indicator's data has two sources: shared on-disk files (`cost-ledger.jsonl`, `slot_state.json`) that any indicator can update, and the per-session stdin payload Claude Code passes to *that* session's status-line subprocess on each refresh.
+
+Shared on-disk data — the cost numerator (`$X`) and cap projection (`≈$Y`) — stays fresh in idle sessions because indicators running in *other* active sessions keep the files current; every indicator reads them on each refresh.
+
+The stdin payload is per-session. Its `rate_limits.five_hour.used_percentage` (the displayed `Z%`) and `resets_at` (used to anchor the cost window) are populated by Claude Code from the response headers of the last API call **in that specific session**. An idle session makes no new API calls, so its payload still carries the slot percentage as it stood the last time that session talked to Anthropic. Active sessions show the live percentage; idle sessions show the percentage frozen at their last activity.
+
+This means in a multi-session workflow, you'll often see two open Claude Code windows that **agree on `$X` and `≈$Y` but disagree on `Z%`** — the active one is current, the idle one is stale. The percentage in the idle session self-corrects the moment that session makes any API call (a user prompt, a slash command, anything that triggers a model turn).
+
+This is a Claude Code platform characteristic, not a cost-guard bug. cost-guard cannot synthesize a fresh slot percentage for an idle session because the value comes from server response headers cost-guard never sees directly.
+
+### Slot reset boundaries — brief calibrating window
+
+The 5-hour slot resets at discrete points marked by `rate_limits.five_hour.resets_at` in Claude Code's payload. cost-guard anchors its cost window to the current slot period (`resets_at − 5h`) so spending from the previous period doesn't pollute the new period's cap projection. Right after a reset there's a short window where the new period has too little data for any meaningful extrapolation; the cell collapses to `🎰 slot: N% (calibrating)` until both gates clear: slot ≥ 0.5 % AND ≥ $0.05 of cost-guard-tracked spending in the current period. Both bars are low so the calibrating window typically lasts seconds to a few minutes after a reset, then the dynamic estimate kicks in and `$X = ≈$Y × Z/100` always holds. The cap will look small at first and converge upward as the period accumulates data — that's the estimate honestly reflecting the new period's $-per-pp ratio, which depends on your current model mix (Opus / Sonnet / Haiku, cache hit rates, output ratios) and is generally not the same as the previous period's ratio.
 
 ---
 

@@ -100,7 +100,6 @@ HALT_LOG = PLUGIN_DATA / "halt-log.jsonl"
 SEED_MARKER = PLUGIN_DATA / ".seeded"
 INDICATOR_STATE = PLUGIN_DATA / "indicator.json"
 INGEST_LOCK = PLUGIN_DATA / ".ingest.lock"
-
 WINDOW_5H_SECONDS = 5 * 60 * 60
 WINDOW_RATE_SECONDS = 5 * 60
 
@@ -1169,17 +1168,25 @@ def _render_cost_guard_row(payload: Dict[str, Any]) -> str:
 
     # Estimated full-slot USD capacity, and cumulative USD burned in the slot.
     #
-    # Uses the trailing-5h cost across ALL sessions (not just this one) as the
-    # basis for the projection, against Claude Code's account-wide slot
-    # percentage. The previous per-session formula was
-    #     est_slot_cap = sess_cost / (slot_share / 100)
-    # where slot_share = slot_latest_pct - slot_start_pct. That assumed this
-    # session was the sole consumer of the 5h slot, so when other sessions
-    # burned percentage points without this session burning $ proportionally,
-    # the implied cap would drop and the displayed slot_used_usd would visibly
-    # decrease. Using global_5h_cost_usd against slot_latest_pct ties the
-    # estimate to the same trailing-5h window the slot meter itself reflects,
-    # so the ratio stays stable as entries enter and age out of the window.
+    # The slot is anchored to Anthropic's CURRENT 5-hour period, not a rolling
+    # `now − 5h` window. We derive the period start from `rate_limits.five_hour
+    # .resets_at` (when present): `period_start = resets_at − 5h`. Without this
+    # anchoring, slot resets — when Anthropic's percentage drops sharply
+    # (e.g. 80 % → 2 %) — produce wild cap projections because the rolling
+    # cost window still contains pre-reset spending while the percentage has
+    # already moved on. Pinning the cost window to the current slot period
+    # keeps numerator and denominator describing the same time interval.
+    #
+    # The cap is the dynamic estimate only: `slot_used_usd / (slot_pct/100)`.
+    # We deliberately do NOT carry a saved cap from prior periods across the
+    # reset boundary, even though that would visually stabilise the display:
+    # each slot period's $-per-pp ratio depends on the user's model mix
+    # (Opus / Sonnet / Haiku, cache hit rates, output ratios), so a previous
+    # period's cap is structurally wrong for the new one. Showing it would
+    # produce internally inconsistent math (`X ≠ Y × Z/100`). The cell
+    # collapses to `(calibrating)` until the new period has at least 0.5 %
+    # of slot used and $0.05 of cost-guard-tracked spending — both low bars,
+    # so the calibrating window after a reset is brief.
     #
     # Caveat: cost-guard only sees costs from JSONL transcripts under
     # ~/.claude/projects, so claude.ai web/desktop activity contributes to
@@ -1188,11 +1195,28 @@ def _render_cost_guard_row(payload: Dict[str, Any]) -> str:
     est_slot_cap: Optional[float] = None
     slot_used_usd: Optional[float] = None
     if slot_latest_pct is not None and float(slot_latest_pct) >= 0.5:
-        slot_used_usd = global_5h_cost_usd()
+        # Anchor cost window to the current slot period when resets_at known.
+        resets_at_raw = (
+            payload.get("rate_limits", {}).get("five_hour", {}).get("resets_at")
+        )
+        try:
+            resets_at = float(resets_at_raw) if resets_at_raw else None
+        except (TypeError, ValueError):
+            resets_at = None
+        if resets_at and resets_at > time.time():
+            period_start = resets_at - WINDOW_5H_SECONDS
+        else:
+            period_start = time.time() - WINDOW_5H_SECONDS  # fallback
+
+        slot_used_usd = sum(
+            float(r.get("cost_usd") or 0.0)
+            for r in _dedupe_rows(ledger_since(period_start))
+        )
+
         if slot_used_usd >= 0.05:
             est_slot_cap = slot_used_usd / (float(slot_latest_pct) / 100.0)
         else:
-            slot_used_usd = None  # not enough data; render as calibrating
+            slot_used_usd = None  # too little data; render as calibrating
 
     RESET = "\033[0m"
     BOLD = "\033[1m"
