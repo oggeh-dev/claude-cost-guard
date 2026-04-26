@@ -42,7 +42,7 @@ Columns on line 2 and line 3 align: the second column on line 3 (slot) starts at
 | `🔥 rate: $X/min (limit $Y)` | Trailing 5-minute USD burn rate vs the per-minute limit. |
 | `👣 step: $X (cap $Y)` | USD spent in the current step vs the per-step hard cap. Resets on every new `UserPromptSubmit`. |
 | `🧠 ctx: N%` | Percent of the Claude Code context window currently in use (from Claude Code's own data, always available). |
-| `🎰 slot: $X of ≈$Y plan (N%)` | **For Claude.ai Pro/Max subscribers.** The estimated USD value your 5-hour rate-limit slot represents, and how many of those dollars have already been consumed across *all* sessions in the current window. Derived from this session's cost-to-slot ratio (`session_cost ÷ session_slot_share × 100`). Lets you map the USD caps onto your subscription's slot in actual-dollar terms: if `plan ≈ $15` and you've used `$5.25` (35%), you have about $9.75 of slot left before Anthropic throttles. Shown only once the session has a stable signal (≥ $0.05 spent and ≥ 0.1% slot movement). Before that, the cell collapses to `🎰 slot: N% (calibrating)`. |
+| `🎰 slot: $X of ≈$Y plan (N%)` | **For Claude.ai Pro/Max subscribers.** The estimated USD value your 5-hour rate-limit slot represents, and how many of those dollars have already been consumed across *all* sessions in the current window. Derived from the trailing-5h cost-ledger total (across every Claude Code session under `~/.claude/projects/`) divided by the slot percentage Claude Code reports — i.e. the actual `$_used ÷ slot_pct × 100`, not a single-session extrapolation. Lets you map the USD caps onto your subscription's slot in actual-dollar terms: if `plan ≈ $15` and you've used `$5.25` (35%), you have about $9.75 of slot left before Anthropic throttles. Shown only once the slot meter has moved past 0.5% and the trailing-5h cost is at least $0.05; before that, the cell collapses to `🎰 slot: N% (calibrating)`. See [Known limitations](#known-limitations) for the cases where this estimate is biased. |
 
 ### Every threshold is in USD
 
@@ -177,6 +177,20 @@ All persistent state lives in `${CLAUDE_PLUGIN_DATA}` which Claude Code resolves
 - **Re-seed from history:** delete `${CLAUDE_PLUGIN_DATA}/.seeded`. The next `SessionStart` will rebuild the ledger from `~/.claude/projects`.
 - **Uninstall:** `/plugin uninstall cost-guard@oggeh`. Pass `--keep-data` to preserve the ledger in case you re-install later.
 - **Reset everything:** delete `${CLAUDE_PLUGIN_DATA}`.
+
+---
+
+## Known limitations
+
+These are intrinsic to the data and platform behavior cost-guard depends on; the indicator's `🎰 slot:` cell is the cell most affected.
+
+### Non-Claude-Code activity
+
+cost-guard only sees costs recorded in JSONL transcripts under `~/.claude/projects/`. Tokens consumed via claude.ai web/desktop or other Claude apps still count against your 5-hour slot but don't appear in the ledger. Users who split work across those surfaces will see the `slot:` cell **underestimate** the true slot value — the bigger your non-Claude-Code share, the bigger the gap.
+
+### Idle sessions
+
+cost-guard updates the ledger from hook fires (`UserPromptSubmit`, `PreToolUse`, `PostToolBatch`, `PreCompact`, `SubagentStart`) and reads it on every status-line refresh. In a fully-idle session — one where you're reading the response with no further activity — Claude Code does not reliably invoke the status-line subprocess on its `refreshInterval` schedule, so the indicator can show stalled `slot:` values until the next hook fires (any user input or tool call wakes it instantly). This is a Claude Code platform behavior, not a cost-guard bug; values self-correct the moment the session resumes activity.
 
 ---
 

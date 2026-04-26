@@ -35,6 +35,11 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timezone
+
+try:
+    import fcntl  # POSIX advisory file locks
+except ImportError:
+    fcntl = None  # Windows / unsupported — graceful fallback
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -94,6 +99,7 @@ SESSIONS_DIR = PLUGIN_DATA / "sessions"
 HALT_LOG = PLUGIN_DATA / "halt-log.jsonl"
 SEED_MARKER = PLUGIN_DATA / ".seeded"
 INDICATOR_STATE = PLUGIN_DATA / "indicator.json"
+INGEST_LOCK = PLUGIN_DATA / ".ingest.lock"
 
 WINDOW_5H_SECONDS = 5 * 60 * 60
 WINDOW_RATE_SECONDS = 5 * 60
@@ -311,12 +317,50 @@ def ledger_since(since_ts: float) -> List[Dict[str, Any]]:
     return out
 
 
+def _ledger_dedupe_key(rec: Dict[str, Any]) -> Tuple[Any, ...]:
+    """Identity key for ledger entries — same key means duplicate.
+
+    Uses (ts, session_id, origin, model, cost rounded to 6dp). This catches
+    the race-condition double-appends from `ingest_transcript` (where two
+    concurrent hooks both read the same `last_ingested_ts`, find the same
+    new transcript entries, and each append them once). Real distinct entries
+    written by the same model in the same millisecond would collide here too,
+    but Claude Code's transcript timestamps include sub-millisecond precision
+    so genuine collisions are vanishingly rare; double-appends are common.
+    """
+    return (
+        rec.get("ts"),
+        rec.get("session_id"),
+        rec.get("origin"),
+        rec.get("model"),
+        round(float(rec.get("cost_usd") or 0.0), 6),
+    )
+
+
+def _dedupe_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    seen = set()
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        k = _ledger_dedupe_key(r)
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(r)
+    return out
+
+
 def ledger_compact() -> None:
+    """Trim entries older than 5h AND deduplicate. Runs on every SessionStart.
+
+    Deduplication is the file-side companion to the dedupe-on-read in the
+    cost-aggregate functions: read-side keeps displayed numbers correct even
+    on a dirty ledger, compact eventually cleans the file so it doesn't grow
+    unbounded with phantom rows."""
     if not COST_LEDGER.exists():
         return
     cutoff = time.time() - WINDOW_5H_SECONDS
     try:
-        rows = ledger_since(cutoff)
+        rows = _dedupe_rows(ledger_since(cutoff))
         tmp = COST_LEDGER.with_suffix(".jsonl.tmp")
         with tmp.open("w") as f:
             for rec in rows:
@@ -394,16 +438,18 @@ def seed_from_history(max_transcripts: int = 200) -> int:
 # --- aggregates -------------------------------------------------------------
 
 def global_5h_cost_usd() -> float:
-    """Aggregate of ALL sessions in the trailing 5h (informational only)."""
-    rows = ledger_since(time.time() - WINDOW_5H_SECONDS)
+    """Aggregate of ALL sessions in the trailing 5h (informational only).
+    Deduplicates on read so a dirty ledger (race-condition double-appends in
+    `ingest_transcript`) does not inflate the displayed total."""
+    rows = _dedupe_rows(ledger_since(time.time() - WINDOW_5H_SECONDS))
     return sum(float(r.get("cost_usd") or 0.0) for r in rows)
 
 
 def session_cost_usd(session_id: str) -> float:
-    """This session's cost over the trailing 5h."""
+    """This session's cost over the trailing 5h. Deduplicated on read."""
     if not session_id:
         return 0.0
-    rows = ledger_since(time.time() - WINDOW_5H_SECONDS)
+    rows = _dedupe_rows(ledger_since(time.time() - WINDOW_5H_SECONDS))
     return sum(
         float(r.get("cost_usd") or 0.0)
         for r in rows
@@ -412,10 +458,10 @@ def session_cost_usd(session_id: str) -> float:
 
 
 def session_rate_per_min_usd(session_id: str) -> float:
-    """This session's trailing 5-minute burn rate (USD/min)."""
+    """This session's trailing 5-minute burn rate (USD/min). Deduplicated on read."""
     if not session_id:
         return 0.0
-    rows = ledger_since(time.time() - WINDOW_RATE_SECONDS)
+    rows = _dedupe_rows(ledger_since(time.time() - WINDOW_RATE_SECONDS))
     total = sum(
         float(r.get("cost_usd") or 0.0)
         for r in rows
@@ -425,7 +471,8 @@ def session_rate_per_min_usd(session_id: str) -> float:
 
 
 def current_turn_cost_usd(session_id: str, since_ts: float) -> float:
-    rows = ledger_since(since_ts)
+    """Deduplicated on read."""
+    rows = _dedupe_rows(ledger_since(since_ts))
     return sum(
         float(r.get("cost_usd") or 0.0)
         for r in rows
@@ -524,30 +571,64 @@ def read_hook_input() -> Dict[str, Any]:
 
 
 def ingest_transcript(payload: Dict[str, Any], session_id: str) -> None:
+    """Append new transcript entries to the cost ledger.
+
+    Concurrency safety: hooks fire in close succession (PreToolUse, PostToolBatch,
+    SubagentStart, etc.) and each one calls this function. Without locking, two
+    hooks can both load the same `last_ingested_ts`, find the same new entries,
+    and each append them — producing exact-duplicate ledger rows that inflate
+    every cost aggregate. We acquire an exclusive POSIX advisory lock on
+    `INGEST_LOCK` for the full read-modify-write so concurrent hooks serialize.
+    Falls through gracefully (no lock) on platforms without `fcntl` so we don't
+    crash; dedupe-on-read in the cost functions and dedupe-in-compact still
+    cover that case."""
     tp = payload.get("transcript_path")
     if not tp:
         return
-    sess = session_load(session_id)
-    last_ts = float(sess.get("last_ingested_ts") or 0.0)
-    latest = last_ts
-    for ts, model, cost in parse_transcript(tp, since_ts=last_ts if last_ts > 0 else None):
-        if ts <= last_ts or cost <= 0:
-            continue
-        ledger_append(ts, session_id, model, cost, origin="main")
-        if ts > latest:
-            latest = ts
+
+    _ensure_data_dir()
+    lock_f = None
     try:
-        for sub in subagent_transcripts_for(tp):
-            for ts, model, cost in parse_transcript(sub, since_ts=last_ts if last_ts > 0 else None):
-                if ts <= last_ts or cost <= 0:
-                    continue
-                ledger_append(ts, session_id, model, cost, origin="sub")
-                if ts > latest:
-                    latest = ts
-    except Exception:
-        pass
-    if latest > last_ts:
-        session_update(session_id, last_ingested_ts=latest)
+        if fcntl is not None:
+            try:
+                lock_f = open(INGEST_LOCK, "a")
+                fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX)
+            except OSError:
+                # Locking unavailable on this filesystem — proceed unlocked.
+                if lock_f is not None:
+                    try:
+                        lock_f.close()
+                    except Exception:
+                        pass
+                lock_f = None
+
+        sess = session_load(session_id)
+        last_ts = float(sess.get("last_ingested_ts") or 0.0)
+        latest = last_ts
+        for ts, model, cost in parse_transcript(tp, since_ts=last_ts if last_ts > 0 else None):
+            if ts <= last_ts or cost <= 0:
+                continue
+            ledger_append(ts, session_id, model, cost, origin="main")
+            if ts > latest:
+                latest = ts
+        try:
+            for sub in subagent_transcripts_for(tp):
+                for ts, model, cost in parse_transcript(sub, since_ts=last_ts if last_ts > 0 else None):
+                    if ts <= last_ts or cost <= 0:
+                        continue
+                    ledger_append(ts, session_id, model, cost, origin="sub")
+                    if ts > latest:
+                        latest = ts
+        except Exception:
+            pass
+        if latest > last_ts:
+            session_update(session_id, last_ingested_ts=latest)
+    finally:
+        if lock_f is not None:
+            try:
+                lock_f.close()  # closes the fd → releases the flock
+            except Exception:
+                pass
 
 
 def cmd_halt_check() -> int:
@@ -1087,21 +1168,31 @@ def _render_cost_guard_row(payload: Dict[str, Any]) -> str:
             session_save(session_id, sess_state)
 
     # Estimated full-slot USD capacity, and cumulative USD burned in the slot.
-    # Computed as soon as the session has done meaningful work AND moved the
-    # slot at least slightly (>= $0.05 spent AND >= 0.1% slot movement). Below
-    # those, the ratio is too noisy to be useful.
-    slot_start_pct = sess_state.get("slot_start_percent")
+    #
+    # Uses the trailing-5h cost across ALL sessions (not just this one) as the
+    # basis for the projection, against Claude Code's account-wide slot
+    # percentage. The previous per-session formula was
+    #     est_slot_cap = sess_cost / (slot_share / 100)
+    # where slot_share = slot_latest_pct - slot_start_pct. That assumed this
+    # session was the sole consumer of the 5h slot, so when other sessions
+    # burned percentage points without this session burning $ proportionally,
+    # the implied cap would drop and the displayed slot_used_usd would visibly
+    # decrease. Using global_5h_cost_usd against slot_latest_pct ties the
+    # estimate to the same trailing-5h window the slot meter itself reflects,
+    # so the ratio stays stable as entries enter and age out of the window.
+    #
+    # Caveat: cost-guard only sees costs from JSONL transcripts under
+    # ~/.claude/projects, so claude.ai web/desktop activity contributes to
+    # the slot percentage but not to this number — making the estimate a
+    # lower bound for users who split work across surfaces.
     est_slot_cap: Optional[float] = None
     slot_used_usd: Optional[float] = None
-    if (
-        slot_start_pct is not None
-        and slot_latest_pct is not None
-        and sess_cost >= 0.05
-    ):
-        slot_share = float(slot_latest_pct) - float(slot_start_pct)
-        if slot_share >= 0.1:
-            est_slot_cap = sess_cost / (slot_share / 100.0)
-            slot_used_usd = est_slot_cap * (float(slot_latest_pct) / 100.0)
+    if slot_latest_pct is not None and float(slot_latest_pct) >= 0.5:
+        slot_used_usd = global_5h_cost_usd()
+        if slot_used_usd >= 0.05:
+            est_slot_cap = slot_used_usd / (float(slot_latest_pct) / 100.0)
+        else:
+            slot_used_usd = None  # not enough data; render as calibrating
 
     RESET = "\033[0m"
     BOLD = "\033[1m"
@@ -1266,6 +1357,14 @@ def cmd_indicator() -> int:
     Reads the session JSON on stdin. If install was run in `compose` mode,
     first runs the previously-configured command with the same stdin and
     echoes its stdout verbatim; then prints cost-guard's row below.
+
+    The indicator is intentionally read-only: ingestion runs from hooks
+    (PreToolUse / PostToolBatch / SubagentStart / UserPromptSubmit / etc.)
+    in `cmd_halt_check`. We do not ingest from the indicator path because
+    Claude Code does not reliably invoke the status-line subprocess during
+    fully-idle sessions, so per-tick ingestion would only marginally close
+    the gap between Claude's final assistant message and the user's next
+    prompt — at the cost of parsing the transcript on every refresh.
     """
     try:
         data = sys.stdin.read()
