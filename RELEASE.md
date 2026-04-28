@@ -20,7 +20,7 @@ Standard [semantic versioning](https://semver.org/) — `MAJOR.MINOR.PATCH`.
 
 ### 1. `.claude-plugin/plugin.json`
 
-Bump `"version"`. This is the field Claude Code uses to detect "has the user got the latest?". **Skipping this bump is the most common release mistake** — users running `/plugin update cost-guard@oggeh` will see "already at the latest version" and miss your release.
+Bump `"version"`. This is the field Claude Code uses to detect "has the user got the latest?". **Skipping this bump is the most common release mistake** — users running `/plugin update cost-guard@claude-community` will see "already at the latest version" and miss your release.
 
 ### 2. `CHANGELOG.md`
 
@@ -84,10 +84,10 @@ The tag format is `cost-guard--v0.2.0` — the `claude plugin tag` command deriv
 After your push:
 
 ```
-/plugin update cost-guard@oggeh
+/plugin update cost-guard@claude-community
 ```
 
-If the user has enabled auto-update for the `oggeh` marketplace (third-party marketplaces have it OFF by default; the user must opt in via `/plugin` → Marketplaces tab), Claude Code refreshes on next start and prompts them to run `/reload-plugins`.
+If the user has enabled auto-update for the `claude-community` marketplace (auto-update is OFF by default; the user must opt in via `/plugin` → Marketplaces tab), Claude Code refreshes on next start and prompts them to run `/reload-plugins`.
 
 ---
 
@@ -127,7 +127,7 @@ After pushing:
 
 - [ ] The commit appears at `oggeh-dev/claude-cost-guard`.
 - [ ] The tag `cost-guard--v<NEW>` appears in the GitHub releases / tags view.
-- [ ] In a fresh Claude Code session: `/plugin update cost-guard@oggeh` pulls the new version.
+- [ ] In a fresh Claude Code session: `/plugin update cost-guard@claude-community` pulls the new version.
 - [ ] `/cost-guard:status` shows `enabled: true` and the new behavior is in effect.
 
 ---

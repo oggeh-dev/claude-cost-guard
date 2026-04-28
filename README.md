@@ -64,14 +64,14 @@ Session cost comes from the JSONL transcript (`transcript_path` is provided to e
 
 ## Install
 
-### From the OGGEH marketplace
+### From the Claude Code community marketplace
 
 ```
-/plugin marketplace add oggeh-dev/claude-plugins
-/plugin install cost-guard@oggeh
+/plugin marketplace add anthropics/claude-plugins-community
+/plugin install cost-guard@claude-community
 ```
 
-The first command registers the marketplace catalog under the local name `oggeh`; the second installs the `cost-guard` plugin from it. Halts activate on the next `SessionStart`.
+Distributed via [`anthropics/claude-plugins-community`](https://github.com/anthropics/claude-plugins-community) — Anthropic's curated marketplace for community-contributed Claude Code plugins. Every plugin listed there has been submitted via [claude.ai](https://clau.de/plugin-directory-submission), passed automated security scanning, and been approved for distribution. Halts activate on the next `SessionStart`.
 
 ### Local development
 
@@ -82,7 +82,7 @@ git clone git@github.com:oggeh-dev/claude-cost-guard.git
 claude --plugin-dir claude-cost-guard
 ```
 
-The `oggeh` marketplace at [`oggeh-dev/claude-plugins`](https://github.com/oggeh-dev/claude-plugins) catalogs this plugin via a `github` source, so the install commands above route Claude Code to fetch from this repo automatically — no special path needed.
+This repo is the canonical source. The community marketplace tracks tagged releases (currently pinned to a specific commit SHA) and serves as the primary install path; clone-and-`--plugin-dir` is for local development against `main`.
 
 ---
 
@@ -173,9 +173,9 @@ All persistent state lives in `${CLAUDE_PLUGIN_DATA}` which Claude Code resolves
 
 ## Reinstalling, uninstalling, resetting
 
-- **Reinstall / update:** re-run `/plugin install cost-guard@oggeh` or swap the `--plugin-dir`. `${CLAUDE_PLUGIN_DATA}` survives.
+- **Reinstall / update:** re-run `/plugin install cost-guard@claude-community` or swap the `--plugin-dir`. `${CLAUDE_PLUGIN_DATA}` survives.
 - **Re-seed from history:** delete `${CLAUDE_PLUGIN_DATA}/.seeded`. The next `SessionStart` will rebuild the ledger from `~/.claude/projects`.
-- **Uninstall:** `/plugin uninstall cost-guard@oggeh`. Pass `--keep-data` to preserve the ledger in case you re-install later.
+- **Uninstall:** `/plugin uninstall cost-guard@claude-community`. Pass `--keep-data` to preserve the ledger in case you re-install later.
 - **Reset everything:** delete `${CLAUDE_PLUGIN_DATA}`.
 
 ---

@@ -52,14 +52,14 @@ All written exclusively to your local filesystem, under directories Claude Code 
 ## Third parties
 
 - The plugin uses Anthropic's published pricing rates for opus / sonnet / haiku tiers, embedded as a static JSON table in the plugin (`pricing.json`). The plugin does not communicate with Anthropic, OGGEH, or any other party at runtime.
-- If you install `cost-guard` from the [`oggeh-dev/claude-plugins`](https://github.com/oggeh-dev/claude-plugins) marketplace or from Anthropic's official marketplace, your *Claude Code installation* may make standard GitHub clone requests when fetching the plugin. That activity is governed by Claude Code's own privacy policy and GitHub's privacy policy — `cost-guard` itself isn't involved.
+- If you install `cost-guard` from the [`anthropics/claude-plugins-community`](https://github.com/anthropics/claude-plugins-community) marketplace, your *Claude Code installation* may make standard GitHub clone requests when fetching the plugin. That activity is governed by Claude Code's own privacy policy and GitHub's privacy policy — `cost-guard` itself isn't involved.
 
 ## Your control
 
 - **Inspect everything the plugin has stored:** run `/cost-guard:diag` inside Claude Code, or examine `~/.claude/plugins/data/cost-guard-*/` directly.
 - **Wipe all plugin data:** delete the `${CLAUDE_PLUGIN_DATA}` directory (and `~/.claude/cost-guard-indicator-backup.json` if you installed the indicator). The plugin reseeds defaults on next session start; no remote sync exists to repopulate anything.
 - **Disable the history-seeding step:** set `seed_from_history: false` in `userConfig` (or via the runtime overrides file). The plugin will then skip the one-time scan of past transcripts.
-- **Uninstall:** running `/plugin uninstall cost-guard@oggeh` removes the plugin entirely. By default Claude Code deletes `${CLAUDE_PLUGIN_DATA}` along with the uninstall; pass `--keep-data` if you want to preserve the ledger across reinstalls.
+- **Uninstall:** running `/plugin uninstall cost-guard@claude-community` removes the plugin entirely. By default Claude Code deletes `${CLAUDE_PLUGIN_DATA}` along with the uninstall; pass `--keep-data` if you want to preserve the ledger across reinstalls.
 
 ## Changes to this policy
 
