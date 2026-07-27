@@ -1,44 +1,188 @@
 {
   "_metadata": {
-    "source": "https://platform.claude.com/docs pricing page",
+    "schema": 2,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "last_verified": "2026-07-27",
+    "max_age_days": 45,
     "unit": "USD per 1,000,000 tokens",
-    "last_verified": "2026-04-25",
-    "fields": {
-      "input": "standard input tokens",
-      "output": "output tokens",
-      "cache_write_5m": "ephemeral 5-minute cache write",
-      "cache_write_1h": "ephemeral 1-hour cache write (ENABLE_PROMPT_CACHING_1H)",
-      "cache_read": "cache read"
+    "_why_per_model": "Schema 1 priced by TIER, matching 'opus' as a substring of the model id. That was sound while every Opus release shared a price. It stopped being sound when Opus 4.1 ($15/$75) and Opus 5 ($5/$25) ended up in the same tier 3x apart \u2014 every Opus 5 session was costed at Opus 4.1 rates, so a halt guard configured for $10 fired at roughly $3.30 of real spend. Rates are now per model, with effective-date ranges, because pricing changes on dates (Sonnet 5 on 2026-09-01) and a report must price a session by ITS OWN date or every historical number silently changes overnight.",
+    "cache_multipliers": {
+      "_note": "Documented multipliers on base input, so only input+output need maintaining per model. Fewer numbers, fewer things to go stale.",
+      "write_5m": 1.25,
+      "write_1h": 2.0,
+      "read": 0.1
+    },
+    "modifiers": {
+      "inference_geo_us": 1.1,
+      "web_search_usd_per_1k_requests": 10.0,
+      "batch": 0.5
+    }
+  },
+  "models": {
+    "claude-fable-5": {
+      "periods": [
+        {
+          "input": 10.0,
+          "output": 50.0
+        }
+      ]
+    },
+    "claude-mythos-5": {
+      "periods": [
+        {
+          "input": 10.0,
+          "output": 50.0
+        }
+      ]
+    },
+    "claude-opus-5": {
+      "periods": [
+        {
+          "input": 5.0,
+          "output": 25.0
+        }
+      ],
+      "fast": {
+        "input": 10.0,
+        "output": 50.0
+      }
+    },
+    "claude-opus-4-8": {
+      "periods": [
+        {
+          "input": 5.0,
+          "output": 25.0
+        }
+      ],
+      "fast": {
+        "input": 10.0,
+        "output": 50.0
+      }
+    },
+    "claude-opus-4-7": {
+      "periods": [
+        {
+          "input": 5.0,
+          "output": 25.0
+        }
+      ]
+    },
+    "claude-opus-4-6": {
+      "periods": [
+        {
+          "input": 5.0,
+          "output": 25.0
+        }
+      ]
+    },
+    "claude-opus-4-5": {
+      "periods": [
+        {
+          "input": 5.0,
+          "output": 25.0
+        }
+      ]
+    },
+    "claude-opus-4-1": {
+      "periods": [
+        {
+          "input": 15.0,
+          "output": 75.0
+        }
+      ]
+    },
+    "claude-opus-4": {
+      "periods": [
+        {
+          "input": 15.0,
+          "output": 75.0
+        }
+      ]
+    },
+    "claude-sonnet-5": {
+      "periods": [
+        {
+          "to": "2026-08-31",
+          "input": 2.0,
+          "output": 10.0,
+          "_note": "introductory pricing"
+        },
+        {
+          "from": "2026-09-01",
+          "input": 3.0,
+          "output": 15.0
+        }
+      ]
+    },
+    "claude-sonnet-4-6": {
+      "periods": [
+        {
+          "input": 3.0,
+          "output": 15.0
+        }
+      ]
+    },
+    "claude-sonnet-4-5": {
+      "periods": [
+        {
+          "input": 3.0,
+          "output": 15.0
+        }
+      ]
+    },
+    "claude-sonnet-4": {
+      "periods": [
+        {
+          "input": 3.0,
+          "output": 15.0
+        }
+      ]
+    },
+    "claude-haiku-4-5": {
+      "periods": [
+        {
+          "input": 1.0,
+          "output": 5.0
+        }
+      ]
+    },
+    "claude-haiku-3-5": {
+      "periods": [
+        {
+          "input": 0.8,
+          "output": 4.0
+        }
+      ]
     }
   },
   "tiers": {
+    "_note": "FALLBACK for a model id not in `models` \u2014 a release that shipped after this file was last verified. Deliberately the OLD, higher numbers: for a halt guard, over-estimating an unknown model fails safe (it halts early), whereas under-estimating lets a runaway loop through. A cost REPORT must flag tier-priced rows instead of presenting them as fact.",
     "opus": {
       "input": 15.0,
-      "output": 75.0,
-      "cache_write_5m": 18.75,
-      "cache_write_1h": 30.0,
-      "cache_read": 1.5
+      "output": 75.0
     },
     "sonnet": {
       "input": 3.0,
-      "output": 15.0,
-      "cache_write_5m": 3.75,
-      "cache_write_1h": 6.0,
-      "cache_read": 0.3
+      "output": 15.0
     },
     "haiku": {
       "input": 0.8,
-      "output": 4.0,
-      "cache_write_5m": 1.0,
-      "cache_write_1h": 1.6,
-      "cache_read": 0.08
+      "output": 4.0
     }
   },
   "model_tier_rules": [
-    {"contains": "opus", "tier": "opus"},
-    {"contains": "sonnet", "tier": "sonnet"},
-    {"contains": "haiku", "tier": "haiku"}
+    {
+      "contains": "opus",
+      "tier": "opus"
+    },
+    {
+      "contains": "sonnet",
+      "tier": "sonnet"
+    },
+    {
+      "contains": "haiku",
+      "tier": "haiku"
+    }
   ],
-  "unknown_model_tier": "opus",
-  "_unknown_note": "Unknown models default to 'opus' rates — conservative (halts earlier rather than later)."
+  "unknown_model_tier": "opus"
 }
