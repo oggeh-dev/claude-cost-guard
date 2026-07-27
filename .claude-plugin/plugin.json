@@ -1,6 +1,6 @@
 {
   "name": "cost-guard",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "Real-time USD cost enforcement for Claude Code. Halts runaway agentic loops mid-step before they burn through your budget.",
   "author": {
     "name": "OGGEH, Inc"
@@ -30,7 +30,7 @@
     "max_usd_per_step": {
       "type": "number",
       "title": "Per-step cost cap (USD)",
-      "description": "Halt the agentic loop after one Claude step (one user prompt → Claude's tool calls + final answer) has spent this many dollars. Primary defense against a single greedy step.",
+      "description": "Halt the agentic loop after one Claude step (one user prompt \u2192 Claude's tool calls + final answer) has spent this many dollars. Primary defense against a single greedy step.",
       "default": 2.0,
       "min": 0.05
     },
