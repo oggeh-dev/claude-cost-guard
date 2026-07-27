@@ -34,7 +34,7 @@ import re
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 try:
     import fcntl  # POSIX advisory file locks
@@ -93,6 +93,7 @@ PLUGIN_ROOT = _plugin_root()
 PLUGIN_DATA = _plugin_data()
 
 PRICING_FILE = PLUGIN_ROOT / "pricing.json"
+PRICING_DOC_URL = "https://platform.claude.com/docs/en/about-claude/pricing"
 COST_LEDGER = PLUGIN_DATA / "cost-ledger.jsonl"
 OVERRIDES = PLUGIN_DATA / "overrides.json"
 SESSIONS_DIR = PLUGIN_DATA / "sessions"
@@ -204,23 +205,124 @@ def pricing() -> Dict[str, Any]:
     return _PRICING
 
 
-def model_rates(model_id: str) -> Dict[str, float]:
+def pricing_age_days() -> Optional[int]:
+    """How long since the table was checked against the published page. None if unstated."""
+    stamp = (pricing().get("_metadata") or {}).get("last_verified")
+    if not stamp:
+        return None
+    try:
+        seen = datetime.strptime(stamp, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+    return (datetime.now().date() - seen).days
+
+
+def pricing_is_stale() -> bool:
+    age = pricing_age_days()
+    limit = int((pricing().get("_metadata") or {}).get("max_age_days") or 0)
+    return bool(age is not None and limit and age > limit)
+
+
+def _period_for(periods: List[Dict[str, Any]], when: date) -> Optional[Dict[str, Any]]:
+    """The rate period covering `when`. Absent `from`/`to` mean open-ended."""
+    for period in periods or []:
+        start, end = period.get("from"), period.get("to")
+        if start and when < datetime.strptime(start, "%Y-%m-%d").date():
+            continue
+        if end and when > datetime.strptime(end, "%Y-%m-%d").date():
+            continue
+        return period
+    return None
+
+
+def _derive_cache_rates(base_input: float) -> Dict[str, float]:
+    """Cache prices are documented MULTIPLIERS on base input, so they are derived rather than
+    stored. Only input and output need maintaining per model."""
+    mult = (pricing().get("_metadata") or {}).get("cache_multipliers") or {}
+    return {
+        "cache_write_5m": base_input * float(mult.get("write_5m", 1.25)),
+        "cache_write_1h": base_input * float(mult.get("write_1h", 2.0)),
+        "cache_read": base_input * float(mult.get("read", 0.1)),
+    }
+
+
+def _match_model(model_id: str, models: Dict[str, Any]) -> Optional[str]:
+    """Exact id, else the longest key that prefixes it.
+
+    Released ids carry a date suffix (`claude-haiku-4-5-20251001`), so a prefix match is what
+    connects them to a table keyed by family. Longest-first matters: `claude-opus-4` must not
+    win over `claude-opus-4-5` for `claude-opus-4-5-20251101`.
+    """
+    if not model_id:
+        return None
+    if model_id in models:
+        return model_id
+    candidates = [k for k in models if model_id.startswith(k)]
+    return max(candidates, key=len) if candidates else None
+
+
+def model_rates(model_id: str, when: Optional[date] = None,
+                fast: bool = False) -> Dict[str, float]:
+    """Per-million rates for a model on a given date.
+
+    Returns the same keys schema 1 returned — input, output, cache_write_5m, cache_write_1h,
+    cache_read — so every existing caller keeps working. `priced_by` says whether the numbers
+    came from the model table or the tier fallback, because a tier-priced row is a guess and a
+    report must not present it as fact.
+    """
     p = pricing()
+    when = when or datetime.now().date()
+    models = p.get("models", {}) or {}
+
+    key = _match_model(model_id, models)
+    if key:
+        entry = models[key] or {}
+        rates = entry.get("fast") if fast and entry.get("fast") else None
+        if rates is None:
+            rates = _period_for(entry.get("periods") or [], when)
+        if rates:
+            base_in = float(rates.get("input", 0.0))
+            out = {"input": base_in, "output": float(rates.get("output", 0.0)),
+                   "priced_by": "model:%s" % key}
+            out.update(_derive_cache_rates(base_in))
+            return out
+
+    # Fallback: an id newer than this table. Deliberately the higher tier numbers — for a halt
+    # guard, over-estimating an unknown model fails safe.
     tiers = p.get("tiers", {}) or {}
-    rules = p.get("model_tier_rules", []) or []
     default_tier = p.get("unknown_model_tier", "opus")
-    if model_id:
-        for rule in rules:
-            needle = rule.get("contains", "")
-            if needle and needle in model_id:
-                return tiers.get(rule.get("tier"), tiers.get(default_tier, {}))
-    return tiers.get(default_tier, {})
+    tier_name = default_tier
+    for rule in p.get("model_tier_rules", []) or []:
+        needle = rule.get("contains", "")
+        if needle and model_id and needle in model_id:
+            tier_name = rule.get("tier", default_tier)
+            break
+    tier = tiers.get(tier_name) or tiers.get(default_tier) or {}
+    if not tier:
+        return {}
+    base_in = float(tier.get("input", 0.0))
+    out = {"input": base_in, "output": float(tier.get("output", 0.0)),
+           "priced_by": "tier:%s (model %r is not in the table — rate is a guess)"
+                        % (tier_name, model_id)}
+    out.update(_derive_cache_rates(base_in))
+    return out
 
 
-def entry_cost_usd(usage: Dict[str, Any], model_id: str) -> float:
-    r = model_rates(model_id)
+def entry_cost_usd(usage: Dict[str, Any], model_id: str,
+                   when: Optional[date] = None) -> float:
+    # Three modifiers live in `usage` and were previously ignored, in both directions:
+    #   speed=fast        Opus 5 / 4.8 cost 2x standard  -> was UNDER-counted by half
+    #   inference_geo=us  a 1.1x multiplier on every category
+    #   web_search        billed per request, not per token
+    fast = str(usage.get("speed") or "") == "fast"
+    r = model_rates(model_id, when=when, fast=fast)
     if not r:
         return 0.0
+    mods = (pricing().get("_metadata") or {}).get("modifiers") or {}
+    geo_mult = (float(mods.get("inference_geo_us", 1.1))
+                if str(usage.get("inference_geo") or "") == "us" else 1.0)
+    searches = int(((usage.get("server_tool_use") or {}).get("web_search_requests")) or 0)
+    search_cost = searches * float(mods.get("web_search_usd_per_1k_requests", 10.0)) / 1000.0
     input_tokens = int(usage.get("input_tokens") or 0)
     output_tokens = int(usage.get("output_tokens") or 0)
     cache_read = int(usage.get("cache_read_input_tokens") or 0)
@@ -231,13 +333,14 @@ def entry_cost_usd(usage: Dict[str, Any], model_id: str) -> float:
     else:
         cw5 = int(usage.get("cache_creation_input_tokens") or 0)
         cw1 = 0
-    return (
+    tokens = (
         input_tokens * r.get("input", 0.0)
         + output_tokens * r.get("output", 0.0)
         + cw5 * r.get("cache_write_5m", 0.0)
         + cw1 * r.get("cache_write_1h", 0.0)
         + cache_read * r.get("cache_read", 0.0)
     ) / 1_000_000.0
+    return tokens * geo_mult + search_cost
 
 
 # --- transcript parsing -----------------------------------------------------
@@ -898,6 +1001,110 @@ def evaluate_and_maybe_halt(
 
 # --- user-facing subcommands ------------------------------------------------
 
+def cmd_refresh_pricing(args: "argparse.Namespace") -> int:
+    """Re-derive rates from the published pricing page.
+
+    The rest of this plugin makes no network calls, and that is deliberate — a halt must not
+    depend on the internet. This command is the one exception, it is explicit, and it is never
+    invoked by a hook. Without it `last_verified` is a comment nobody acts on, which is how the
+    table drifted three months and 3.69x out of date.
+
+    Only base input and output are parsed. Cache rates are documented multipliers on base input
+    and are derived at read time, so there is nothing extra to keep in sync.
+    """
+    import re as _re
+    import urllib.request
+
+    base = (pricing().get("_metadata") or {}).get("source") or PRICING_DOC_URL
+    # The docs site serves the source markdown at `<path>.md`; the HTML path is a 1 MB
+    # single-page-app shell whose table is assembled client-side. Parse the markdown.
+    candidates = [base if base.endswith(".md") else base + ".md", base]
+    body, url, errors = None, None, []
+    for candidate in candidates:
+        try:
+            req = urllib.request.Request(
+                candidate, headers={"User-Agent": "cost-guard/pricing-refresh"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                text = resp.read().decode("utf-8", "replace")
+            if "MTok" in text:
+                body, url = text, candidate
+                break
+            errors.append("%s: fetched but contains no rate rows" % candidate)
+        except Exception as exc:  # noqa: BLE001 - any failure must leave the table alone
+            errors.append("%s: %s" % (candidate, exc))
+    if body is None:
+        print("could not fetch usable pricing content:", file=sys.stderr)
+        for err in errors:
+            print("  %s" % err, file=sys.stderr)
+        print("the committed table is unchanged; rates are still whatever was last verified.",
+              file=sys.stderr)
+        return 1
+    print("fetched %s" % url)
+
+    # Rows look like: | Claude Opus 5 | $5 / MTok | ... | $25 / MTok |
+    found = {}
+    for line in body.splitlines():
+        if "MTok" not in line or not line.lstrip().startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 3:
+            continue
+        name = _re.sub(r"\s*\(.*?\)", "", _re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1",
+                                                  cells[0])).strip()
+        m = _re.match(r"^Claude\s+([A-Za-z]+)\s+([0-9.]+)", name)
+        if not m:
+            continue
+        prices = [float(x) for x in _re.findall(r"\$([0-9.]+)\s*/\s*MTok", line)]
+        if len(prices) < 2:
+            continue
+        key = "claude-%s-%s" % (m.group(1).lower(), m.group(2).replace(".", "-"))
+        # First price column is base input, last is output.
+        found.setdefault(key, {"name": name, "input": prices[0], "output": prices[-1]})
+
+    if not found:
+        print("parsed no pricing rows — the page layout changed. Table left untouched.",
+              file=sys.stderr)
+        print("Re-check %s by hand and update pricing.json." % url, file=sys.stderr)
+        return 1
+
+    table = _read_json(PRICING_FILE, {}) or {}
+    models = table.get("models", {}) or {}
+    changed, added, dated = [], [], []
+    for key, row in sorted(found.items()):
+        entry = models.get(key)
+        if entry is None:
+            models[key] = {"periods": [{"input": row["input"], "output": row["output"]}]}
+            added.append("%s  $%s/$%s" % (key, row["input"], row["output"]))
+            continue
+        periods = entry.get("periods") or []
+        if len(periods) != 1 or periods[0].get("from") or periods[0].get("to"):
+            # Dated pricing (e.g. an introductory period). Never flattened automatically —
+            # collapsing two periods into one silently reprices history.
+            dated.append(key)
+            continue
+        before = (periods[0].get("input"), periods[0].get("output"))
+        after = (row["input"], row["output"])
+        if before != after:
+            periods[0]["input"], periods[0]["output"] = after
+            changed.append("%s  $%s/$%s -> $%s/$%s" % (key, before[0], before[1], *after))
+
+    table["models"] = models
+    meta = table.setdefault("_metadata", {})
+    meta["last_verified"] = datetime.now().date().isoformat()
+    meta["source"] = base
+    PRICING_FILE.write_text(json.dumps(table, indent=2) + "\n", encoding="utf-8")
+
+    print("parsed %d model row(s); last_verified = %s" % (len(found), meta["last_verified"]))
+    for label, rows in (("changed", changed), ("added", added)):
+        for row in rows:
+            print("  %-8s %s" % (label, row))
+    for key in dated:
+        print("  SKIPPED  %s has dated periods — review by hand rather than flatten them" % key)
+    if not changed and not added:
+        print("  no rate changes")
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     cfg = load_config()
 
@@ -911,6 +1118,12 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     out = {
         "enabled": cfg.get("enabled"),
+        "pricing": {
+            "last_verified": (pricing().get("_metadata") or {}).get("last_verified"),
+            "age_days": pricing_age_days(),
+            "stale": pricing_is_stale(),
+            "max_age_days": (pricing().get("_metadata") or {}).get("max_age_days"),
+        },
         "config": {
             "max_usd_per_session": cfg.get("max_usd_per_session"),
             "max_usd_per_step": cfg.get("max_usd_per_step"),
@@ -1749,6 +1962,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("diag", help="Dump plugin state for debugging.")
 
+    sub.add_parser("refresh-pricing",
+                   help="Re-derive rates from the published pricing page "
+                        "(the only command that touches the network).")
+
     sp_ss = sub.add_parser("set-session-limit", help="Set per-session USD cap.")
     sp_ss.add_argument("value", help="New session cap in USD.")
 
@@ -1789,6 +2006,7 @@ def build_parser() -> argparse.ArgumentParser:
 DISPATCH = {
     "status": cmd_status,
     "diag": cmd_diag,
+        "refresh-pricing": cmd_refresh_pricing,
     "set-session-limit": cmd_set_session_limit,
     "set-step-limit": cmd_set_step_limit,
     "set-rate": cmd_set_rate,

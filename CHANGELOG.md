@@ -1,5 +1,48 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Rates are per model, not per tier.** `model_rates()` matched `opus` as a substring of the
+  model id, so every `claude-opus-5` session was priced at Opus 4.1 rates — $15/$75 instead of
+  $5/$25. On a real 239-turn session that reported **$276.16 instead of $74.91, a 3.69x
+  over-estimate**, which means a $10 session cap halted at roughly $2.71 of actual spend. The
+  tier abstraction was sound while every Opus release shared a price; Opus 4.1 and Opus 5 sit
+  3x apart in the same tier.
+- **Effective-date ranges.** Pricing changes on dates — Claude Sonnet 5 moves from $2/$10 to
+  $3/$15 on 2026-09-01 — so a session is now priced by *its own* date. Without this, every
+  historical figure silently changes overnight.
+- **`speed`, `inference_geo` and web search are no longer ignored.** All three are in the
+  transcript's `usage` and were dropped: fast mode (Opus 5/4.8 at $10/$50) was under-counted by
+  half, `inference_geo: "us"` missed its 1.1x multiplier, and web search ($10 per 1,000
+  requests) was not counted at all.
+
+### Added
+
+- **`cost-guard refresh-pricing`** — re-derives rates from the published pricing page. The only
+  command that touches the network, never called from a hook. Without it `last_verified` is a
+  comment nobody acts on, which is how the table drifted three months out of date. It reads the
+  docs' source markdown (`<path>.md`); the HTML path is a 1 MB SPA shell whose table is built
+  client-side. It **fails safe**: an unfetchable page or an unparseable layout leaves the table
+  untouched and exits non-zero rather than writing zeros. It refuses to flatten models with
+  dated periods, because collapsing two periods into one reprices history.
+- **Staleness is visible.** `status --json` reports `pricing.last_verified`, `age_days` and
+  `stale` against `max_age_days`. Halts keep working when stale — the fallback deliberately
+  over-estimates, which fails safe for a guard — but the condition is no longer invisible.
+- **`tests/test_pricing.py`** — 25 tests over rate resolution, effective dates, fast mode,
+  derived cache multipliers, the modifiers, staleness and table integrity. This is money math
+  driving a halt and it shipped untested; the 3.69x defect is what hid in that gap.
+
+### Changed
+
+- Cache rates are **derived** from the documented multipliers (5m write 1.25x, 1h write 2x,
+  read 0.1x) rather than stored per model, so only input and output need maintaining.
+- The tier table remains as a **fallback** for a model id newer than the table, and
+  `model_rates()` now returns `priced_by` so a caller can tell a real rate from a guess. The
+  fallback stays deliberately expensive: for a halt guard, over-estimating an unknown model
+  fails safe, while under-estimating lets a runaway loop through.
+
 All notable changes to `cost-guard` are documented here. This project uses [semantic versioning](https://semver.org).
 
 ## [0.1.4] — 2026-04-26

@@ -11,6 +11,11 @@
 - **Prompt gate** (via `UserPromptSubmit`) blocks the next user prompt if the session has already exceeded its cap, rate, or step limit.
 - **Compaction gate** (via `PreCompact`) blocks context compaction when the budget is already crossed (compaction is an expensive hidden model call).
 
+Rates are **per model with effective-date ranges**, not per tier — Opus 4.1 and Opus 5 are 3x
+apart, so a tier lookup priced Opus 5 sessions at Opus 4.1 rates and halted roughly 3.7x too
+early. `cost-guard refresh-pricing` re-derives the table from the published pricing page and is
+the only command that touches the network; `status --json` reports how stale the table is.
+
 All enforcement runs from hooks reading the JSONL transcript Claude Code writes for every session. All thresholds are in USD. No network calls. Python 3 standard library only.
 
 A **bottom-row indicator** is available as an opt-in extra — `/cost-guard:install-indicator` — that shows live cost metrics at the bottom of the Claude Code UI. It is purely cosmetic; halts run identically whether the indicator is installed or not. If you already have a bottom-row command configured (from `/statusline` or another plugin), the installer detects it and asks whether to *replace* it (cost-guard takes over the slot, three reliable rows; your previous command is backed up and restored by `uninstall-indicator`) or *compose* with it (cost-guard runs your existing command and appends its own three rows below, both visible).
